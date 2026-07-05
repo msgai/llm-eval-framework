@@ -1,0 +1,89 @@
+# Bot configuration (used for result generation and SOP/tool loading)
+bot:
+  bot_id: "db582486-e07d-4172-8741-ae6090549942"
+  bot_ref_id: "5c62fb23-7700-4256-bcc0-a68a7e5083b6"
+
+# Bot combinations for loading CUSTOM_TONE_INSTRUCTIONS and ADJUST_RESPONSE_RULES
+# Results from all combinations are merged into a single prompt block
+tone_bots:
+  - bot_id: "db582486-e07d-4172-8741-ae6090549942"
+    bot_ref_id: "5c62fb23-7700-4256-bcc0-a68a7e5083b6"
+  - bot_id: "db582486-e07d-4172-8741-ae6090549942"
+    bot_ref_id: "5c62fb23-7700-4256-bcc0-a68a7e5083b6"
+
+llm_name: "Model_578a13dc-b2ec-45bf-af42-50784cea379a_v2_December1620250626"
+
+# Source UUIDs for agent retrieval filtering
+filter_tags_source_uuids:
+  - "478f1a48-0e8a-4a99-81f1-fa8d580c4846"
+  - "04f4e679-d251-4dde-bbae-900596faabaf"
+  - "98a62804-9867-4c73-924e-69144bdbe140"
+
+# LLM prediction service local URL
+api:
+  local_url: "http://0.0.0.0:8200/v1/llm/get_ans_sync_stream"
+  headers:
+    serviceEndpointType: "ecs-cpu-lt"
+    Content-Type: "application/json"
+  request_timeout: 1000
+  sleep_timer: 5
+
+# Evaluation judge configuration
+evaluation:
+  model_name: "gpt-5.4"
+  reasoning_effort: "low"
+  batch_size: 8
+  delay_seconds: 5
+
+# Live config endpoints
+config_service:
+  qa:
+    url: "http://qa-configs.internal.netomi.com/v1/service/configuration/get"
+    env: "qa"
+  dev:
+    url: "http://configmanager-dev1.internal.netomi.com/v1/service/configuration/get"
+    env: "dev1"
+  service_name: "ds-gateway-app"
+  region: "us-east-1"
+  timeout_seconds: 10
+
+# DMProxy fallback default values
+dm_proxy_defaults:
+  qa:
+    redis_host: "ds-redis-qa.internal.netomi.com"
+    datamanager_url: "http://dm-qa-a.internal.netomi.com/"
+  dev:
+    redis_host: "ds-redis-dev1.internal.netomi.com"
+    datamanager_url: "http://dm-dev1.internal.netomi.com"
+  redis_port: 6379
+  redis_password: ""
+  client_secret_key: "PWUWERREWT"
+  cache_ttl: 300
+  api_timeout: 5
+  total_retries: 3
+  max_concurrency: 3
+  in_memory_cache_size: 5000
+  in_memory_cache_ttl: 3600
+  use_in_memory_cache: false
+  max_in_memory_cache_entry_size: 102400
+
+# DMProxy parameters
+dm_proxy_api:
+  bot_env: "SANDBOX"
+  capability_id: 2
+  is_action_v2_enabled: true
+
+# Evaluation template prompt file
+prompts:
+  eval_prompt_path: "prompts/eval_prompt.txt"
+
+# ---------------------------------------------------------------------------
+# CLI / script defaults  (all overridable via command-line flags)
+# ---------------------------------------------------------------------------
+defaults:
+  model_name: "gpt-4o-123"
+  dataset_path: "datasets/llm_eval_dataset_1.pkl"
+  output_dir: "results"
+  skip_generation: false
+  skip_evaluation: false
+  results_file: null

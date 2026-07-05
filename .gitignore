@@ -1,0 +1,17 @@
+# Secrets & environment
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# Results & outputs
+results/
+*.pkl
+*.csv
+
+# macOS
+.DS_Store
