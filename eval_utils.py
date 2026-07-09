@@ -40,8 +40,8 @@ def fetch_config_map(env: str = "qa") -> dict:
     cfg = load_config()
     svc = cfg["config_service"]
 
-    env_key = "qa" if env.lower() == "qa" else "dev"
-    url = svc[env_key]["url"]
+    env_key = env.lower() if env.lower() in ("local", "qa", "dev", "prod") else "qa"
+    url = svc[env_key]["dm_config_url"]
     env_val = svc[env_key]["env"]
     service_name = svc["service_name"]
     region = svc["region"]
@@ -68,7 +68,7 @@ def get_dm_config_proxy(env: str = "qa") -> DMProxy:
     """Build DMProxy instance for the environment."""
     cfg = load_config()
     defs = cfg["dm_proxy_defaults"]
-    env_defs = defs.get("qa" if env.lower() == "qa" else "dev", {})
+    env_defs = defs.get(env.lower() if env.lower() in ("qa", "dev") else "dev", {})
 
     config_map = fetch_config_map(env)
 
@@ -217,9 +217,9 @@ def load_tool_configs(
     Tries to retrieve them dynamically from DMProxy (using the
     bot_env and is_action_v2_enabled settings from config.yaml).
     """
-    env = os.environ.get("ENV_CONFIG", "qa")
-    dm_proxy = get_dm_config_proxy(env)
     cfg = load_config()
+    env = cfg.get("bot", {}).get("env") or os.environ.get("ENV_CONFIG", "qa")
+    dm_proxy = get_dm_config_proxy(env)
     api_cfg = cfg.get("dm_proxy_api", {})
     bot_env = api_cfg.get("bot_env", "SANDBOX")
     is_action_v2 = bool(api_cfg.get("is_action_v2_enabled", True))
@@ -248,9 +248,9 @@ def load_sop_configs(
 
     Retrieves and formats dynamically from DMProxy.
     """
-    env = os.environ.get("ENV_CONFIG", "qa")
-    dm_proxy = get_dm_config_proxy(env)
     cfg = load_config()
+    env = cfg.get("bot", {}).get("env") or os.environ.get("ENV_CONFIG", "qa")
+    dm_proxy = get_dm_config_proxy(env)
     api_cfg = cfg.get("dm_proxy_api", {})
     bot_env = api_cfg.get("bot_env", "SANDBOX")
     is_action_v2 = bool(api_cfg.get("is_action_v2_enabled", True))
@@ -327,18 +327,25 @@ def format_adjust_response_rules(rules: list) -> str:
 
     return "\n    \n    \n".join(parts)
 
-
 async def load_dynamic_instructions(
     bot_id: str,
     bot_ref_id: str,
     env: str = "qa",
-) -> tuple:
-    """Fetch custom tone and adjust-response rules live from DM API."""
-    dm_proxy = get_dm_config_proxy(env)
+) -> tuple[str, str]:
+    """
+    Fetch CUSTOM_TONE_INSTRUCTIONS and ADJUST_RESPONSE_RULES
+    for the given bot.
+    """
+
     cfg = load_config()
+
+    # DM API configuration
     api_cfg = cfg.get("dm_proxy_api", {})
     capability_id = int(api_cfg.get("capability_id", 2))
+
     bot_env = api_cfg.get("bot_env", "SANDBOX")
+
+    dm_proxy = get_dm_config_proxy(env)
 
     resp = await dm_proxy.fetch_prompts_list(
         bot_id=bot_id,
@@ -348,56 +355,21 @@ async def load_dynamic_instructions(
         use_cache=False,
     )
 
-    custom_tone_prompt = ""
-    adjust_response_rules_str = ""
-
-    if resp:
-        prompt = None
-        for p in resp:
-            if p.get("capabilityTask") == "RESPONSE_GENERATOR":
-                prompt = p
-                break
-        if not prompt and len(resp) > 0:
-            prompt = resp[0]
-
-        if prompt:
-            basic_config = prompt.get("basicConfiguration", {})
-            custom_tone_prompt = basic_config.get("customTonePrompt", "")
-
-            advanced_config = prompt.get("advancedConfiguration", {})
-            adjust_response_rules = advanced_config.get("adjustResponse", [])
-            adjust_response_rules_str = format_adjust_response_rules(adjust_response_rules)
-
-    return custom_tone_prompt, adjust_response_rules_str
-
-
-async def load_dynamic_instructions_for_all_bots(env: str = "qa") -> tuple:
-    """
-    Fetch CUSTOM_TONE_INSTRUCTIONS and ADJUST_RESPONSE_RULES for all
-    (bot_id, bot_ref_id) combinations listed under tone_bots in config.yaml.
-    Results from each combination are concatenated into a single string.
-    """
-    cfg = load_config()
-    tone_bots = cfg.get("tone_bots", [])
-
-    if not tone_bots:
-        print("[load_dynamic_instructions_for_all_bots] No tone_bots defined in config.yaml — returning empty strings.")
+    if not resp:
         return "", ""
 
-    all_tone_parts: List[str] = []
-    all_rules_parts: List[str] = []
+    prompt = next(
+        (p for p in resp if p.get("capabilityTask") == "RESPONSE_GENERATOR"),
+        resp[0],
+    )
 
-    for i, bot_entry in enumerate(tone_bots, start=1):
-        bot_id = bot_entry.get("bot_id", "")
-        bot_ref_id = bot_entry.get("bot_ref_id", "")
-        print(f"  [{i}/{len(tone_bots)}] Fetching tone/rules for bot_id={bot_id}, bot_ref_id={bot_ref_id}")
-        tone, rules = await load_dynamic_instructions(bot_id, bot_ref_id, env=env)
-        if tone:
-            all_tone_parts.append(tone)
-        if rules:
-            all_rules_parts.append(rules)
+    basic_config = prompt.get("basicConfiguration", {})
+    custom_tone_prompt = basic_config.get("customTonePrompt", "")
 
-    combined_tone = "\n\n".join(all_tone_parts)
-    combined_rules = "\n\n".join(all_rules_parts)
-    print(f"  Merged tone from {len(all_tone_parts)} bots, rules from {len(all_rules_parts)} bots.")
-    return combined_tone, combined_rules
+    advanced_config = prompt.get("advancedConfiguration", {})
+    adjust_response_rules = advanced_config.get("adjustResponse", [])
+    adjust_response_rules_str = format_adjust_response_rules(
+        adjust_response_rules
+    )
+
+    return custom_tone_prompt, adjust_response_rules_str

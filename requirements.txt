@@ -1,21 +1,24 @@
 # Core data & ML
-pandas
-pyyaml
+pandas==2.2.1
+# pyyaml
+PyYAML==6.0.1
 
 # HTTP & env
-requests
-python-dotenv
+requests==2.32.5
+python-dotenv==1.0.1
 
 # Parallel evaluation
 pandarallel
 
 # LLM integration
-langchain-core
-langchain-openai
-httpx[http2]
+langchain-core==1.2.5
+langchain-openai==1.1.6
+# httpx[]
 
 # Schema / validation
-pydantic
+pydantic==2.12.3
+httpx==0.27.2
+h2==4.3.0
 
 # DMProxy (provides config_proxy.data_manager.dm_proxy)
 # Install llm-service in editable mode so config_proxy is importable.

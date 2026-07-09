@@ -1,51 +1,51 @@
 # Bot configuration (used for result generation and SOP/tool loading)
 bot:
-  bot_id: "db582486-e07d-4172-8741-ae6090549942"
-  bot_ref_id: "5c62fb23-7700-4256-bcc0-a68a7e5083b6"
-
-# Bot combinations for loading CUSTOM_TONE_INSTRUCTIONS and ADJUST_RESPONSE_RULES
-# Results from all combinations are merged into a single prompt block
-tone_bots:
-  - bot_id: "db582486-e07d-4172-8741-ae6090549942"
-    bot_ref_id: "5c62fb23-7700-4256-bcc0-a68a7e5083b6"
-  - bot_id: "db582486-e07d-4172-8741-ae6090549942"
-    bot_ref_id: "5c62fb23-7700-4256-bcc0-a68a7e5083b6"
-
-llm_name: "Model_578a13dc-b2ec-45bf-af42-50784cea379a_v2_December1620250626"
-
-# Source UUIDs for agent retrieval filtering
-filter_tags_source_uuids:
-  - "478f1a48-0e8a-4a99-81f1-fa8d580c4846"
-  - "04f4e679-d251-4dde-bbae-900596faabaf"
-  - "98a62804-9867-4c73-924e-69144bdbe140"
-
-# LLM prediction service local URL
-api:
-  local_url: "http://0.0.0.0:8200/v1/llm/get_ans_sync_stream"
-  headers:
-    serviceEndpointType: "ecs-cpu-lt"
-    Content-Type: "application/json"
-  request_timeout: 1000
-  sleep_timer: 5
+  bot_id: "21f57781-fe97-4956-bcfc-183df5fbf5a1"
+  bot_ref_id: "616e6fb1-58d4-40f4-b804-7e80a2dfa083"
+  llm_name: "Model_21f57781-fe97-4956-bcfc-183df5fbf5a1_v1_May2020261558"
+  env: "qa"
+  # Source UUIDs for agent retrieval filtering
+  filter_tags_source_uuids:
+    - "85eb6b5d-9a5d-4229-9d59-24ad04fde061"
+  
 
 # Evaluation judge configuration
 evaluation:
-  model_name: "gpt-5.4"
+  model_name: "gpt-5.2"
   reasoning_effort: "low"
   batch_size: 8
   delay_seconds: 5
 
 # Live config endpoints
 config_service:
+  local:
+    dm_config_url: ""
+    # gateway_url: "http://0.0.0.0:8200/v1/llm/get_ans_sync_stream"
+    gatewau_url: "http://ds-gateway-local.internal.netomi.com/v1/llm/get_ans_sync_stream"
+    env: "local"
   qa:
-    url: "http://qa-configs.internal.netomi.com/v1/service/configuration/get"
+    dm_config_url: "http://qa-configs.internal.netomi.com/v1/service/configuration/get"
+    gateway_url: "http://ds-gateway-qa.internal.netomi.com/v1/llm/get_ans_sync_stream"
     env: "qa"
   dev:
-    url: "http://configmanager-dev1.internal.netomi.com/v1/service/configuration/get"
+    dm_config_url: "http://configmanager-dev1.internal.netomi.com/v1/service/configuration/get"
+    gateway_url: "http://ds-gateway-dev.internal.netomi.com/v1/llm/get_ans_sync_stream"
     env: "dev1"
+  prod:
+    dm_config_url: ""
+    gateway_url: ""
+    env: "prod"
   service_name: "ds-gateway-app"
   region: "us-east-1"
   timeout_seconds: 10
+  # LLM prediction service settings (shared across envs)
+  api:
+    local_url: "http://0.0.0.0:8200/v1/llm/get_ans_sync_stream"
+    headers:
+      serviceEndpointType: "ecs-cpu-lt"
+      Content-Type: "application/json"
+    request_timeout: 1000
+    sleep_timer: 5
 
 # DMProxy fallback default values
 dm_proxy_defaults:
@@ -81,7 +81,7 @@ prompts:
 # CLI / script defaults  (all overridable via command-line flags)
 # ---------------------------------------------------------------------------
 defaults:
-  model_name: "gpt-4o-123"
+  model_name: "gpt-5.2-1234"
   dataset_path: "datasets/llm_eval_dataset_1.pkl"
   output_dir: "results"
   skip_generation: false

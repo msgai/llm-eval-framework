@@ -14,10 +14,16 @@ from langchain_core.output_parsers import PydanticOutputParser
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_openai import ChatOpenAI
 from pandarallel import pandarallel
+from pathlib import Path
 from pydantic import BaseModel, Field
 
 import eval_utils
+import logging
 
+# logging.basicConfig(
+#     level=logging.DEBUG,
+#     format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
+# )
 # Bootstrap
 load_dotenv()
 os.environ["no_proxy"] = "*"
@@ -31,13 +37,13 @@ CONFIG = eval_utils.load_config()
 
 BOT_ID = CONFIG["bot"]["bot_id"]
 BOT_REF_ID = CONFIG["bot"]["bot_ref_id"]
-LLM_NAME = CONFIG["llm_name"]
-FILTER_TAGS_SOURCE_UUIDS = CONFIG["filter_tags_source_uuids"]
+LLM_NAME = CONFIG["bot"]["llm_name"]
+FILTER_TAGS_SOURCE_UUIDS = CONFIG["bot"]["filter_tags_source_uuids"]
 
-LOCAL_URL = CONFIG["api"]["local_url"]
-HEADER = CONFIG["api"]["headers"]
-REQUEST_TIMEOUT = CONFIG["api"]["request_timeout"]
-SLEEP_TIMER = CONFIG["api"]["sleep_timer"]
+LOCAL_URL = CONFIG["config_service"]["api"]["local_url"]
+HEADER = CONFIG["config_service"]["api"]["headers"]
+REQUEST_TIMEOUT = CONFIG["config_service"]["api"]["request_timeout"]
+SLEEP_TIMER = CONFIG["config_service"]["api"]["sleep_timer"]
 
 EVAL_MODEL_NAME = CONFIG["evaluation"]["model_name"]
 EVAL_REASONING_EFFORT = CONFIG["evaluation"]["reasoning_effort"]
@@ -57,12 +63,26 @@ TOOL_DATASET = eval_utils.load_tool_configs(BOT_ID, BOT_REF_ID, CONFIG)
 AVAILABLE_SOP = eval_utils.load_sop_configs(BOT_ID, BOT_REF_ID, CONFIG)
 
 # Load prompts dynamically from all tone_bots combinations in config.yaml
-ENV_CONFIG = os.environ.get("ENV_CONFIG", "qa")
-print(f"Dynamically loading prompts from '{ENV_CONFIG}' configuration for all tone_bots …")
+ENV_CONFIG = CONFIG.get("bot", {}).get("env") or os.environ.get("ENV_CONFIG", "qa")
+print(f"Dynamically loading prompts from '{ENV_CONFIG}' configuration for all …")
+
 CUSTOM_TONE_INSTRUCTIONS, ADJUST_RESPONSE_RULES = asyncio.run(
-    eval_utils.load_dynamic_instructions_for_all_bots(env=ENV_CONFIG)
+    eval_utils.load_dynamic_instructions(
+        bot_id=BOT_ID,
+        bot_ref_id=BOT_REF_ID,
+        env=ENV_CONFIG,
+    )
 )
-print("✔  Loaded and merged CUSTOM_TONE_INSTRUCTIONS and ADJUST_RESPONSE_RULES from DM API.")
+if not CUSTOM_TONE_INSTRUCTIONS and not ADJUST_RESPONSE_RULES:
+
+    CUSTOM_TONE_INSTRUCTIONS = Path(
+        "/Users/pankajkumar/Desktop/Netomi/llm-eval-framework/datasets/custom_tone_instructions.txt"
+    ).read_text(encoding="utf-8")
+
+    ADJUST_RESPONSE_RULES = Path(
+        "/Users/pankajkumar/Desktop/Netomi/llm-eval-framework/datasets/adjust_response_rules.txt"
+    ).read_text(encoding="utf-8")
+    print("✔  Loaded and merged CUSTOM_TONE_INSTRUCTIONS and ADJUST_RESPONSE_RULES from DM API.")
 
 EVALUATION_PROMPT = eval_utils.load_eval_prompt(CONFIG)
 
@@ -159,14 +179,42 @@ def create_payload(requestId, rephrasedQuery, model_name, conversation_context_h
 
 
 def generate_response(response):
+    diagnostic = response.get("diagnosticData") or {}
+    token_usage = diagnostic.get("token_usage") or {}
+    prompt_details = token_usage.get("prompt_tokens_details") or {}
+    completion_details = token_usage.get("completion_tokens_details") or {}
+
+    total_input_token = token_usage.get("prompt_tokens", 0)
+    cached_input_token = (
+        token_usage.get("cached_tokens")
+        or prompt_details.get("cache_read")
+        or prompt_details.get("priority_cache_read")
+        or 0
+    )
+    input_token = total_input_token - cached_input_token
+
+    total_output_token = token_usage.get("completion_tokens", 0)
+    output_token = total_output_token
+    reasoning_output_token = (
+        completion_details.get("reasoning")
+        or completion_details.get("priority_reasoning")
+        or 0
+    )
+
     return {
         "request_id": response["requestId"],
         "rephrase_query": response["nluInfo"]["rephrasedQuery"],
         "answer": response["nluInfo"]["generatedAnswer"],
         "answer_type": response["nluInfo"]["responseType"],
-        "intermediate_steps": response["nluInfo"]["answerSourceDocuments"],
-        "time_metrics": response["triggerIntent"],
         "conversation_history": response.get("conversation_history", []),
+        "intermediate_steps": response["llmIntermediateSteps"],
+        "time_metrics": response["llmTimeMetrics"],
+        "total_input_token": total_input_token,
+        "input_token": input_token,
+        "cached_input_token": cached_input_token,
+        "total_output_token": total_output_token,
+        "output_token": output_token,
+        "reasoning_output_token": reasoning_output_token,
     }
 
 
@@ -232,7 +280,6 @@ def run_conversation(convo_df, model_name):
                     updated_history[-2]["content"] = rephrasedQuery
                 conversation_history = updated_history
             result["conversation_history"] = conversation_history
-
             result_dict = generate_response(result)
             metadata = {
                 "conversation_id": convo_id,
@@ -263,7 +310,6 @@ def run_result_generation(dataset_path, model_name, output_dir):
     model_output_dir = os.path.join(output_dir, model_name)
     os.makedirs(model_output_dir, exist_ok=True)
     os.makedirs(f"{model_output_dir}/pickle_files", exist_ok=True)
-
     eval_dataset = pd.read_pickle(dataset_path)
     eval_dataset = eval_dataset[:1]
     eval_dataset.reset_index(drop=True, inplace=True)
@@ -722,6 +768,8 @@ def run_evaluation(results_file_path, model_name, output_dir):
         expected_cols = [
             "request_id", "conversation_id", "sequence", "component", "Lang",
             "user_query", "conversation_history", "intermediate_steps", "answer", "time_metrics",
+            "total_input_token", "input_token", "cached_input_token", "total_output_token",
+            "output_token", "reasoning_output_token",
         ]
         # Filter existing columns in original_results_df to prevent KeyError
         existing_cols = [col for col in expected_cols if col in original_results_df.columns]
@@ -760,6 +808,8 @@ def run_evaluation(results_file_path, model_name, output_dir):
         "addresses_user_query", "uses_tool_output_correctly", "has_hallucination",
         "is_complete", "hallucination_details",
         "total_tools_used", "tool_wise_results",
+        "total_input_token", "input_token", "cached_input_token", "total_output_token",
+        "output_token", "reasoning_output_token",
     ]
     if "first_token_llm_latency" in combined_df.columns:
         final_columns.extend(["first_token_llm_latency", "last_token_llm_latency"])
@@ -800,8 +850,7 @@ def run_evaluation(results_file_path, model_name, output_dir):
 
 def main():
     """
-    Main entry point.
-
+    Main entry point.ar
     All CLI flags are optional — values fall back to the ``defaults`` block
     in config.yaml when not provided.  A flag on the command line always
     takes priority over the config value.

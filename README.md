@@ -39,16 +39,32 @@ cp .env .env.local          # or just edit .env directly
 
 ## Running
 
-```bash
-# Full pipeline (generate responses, then evaluate):
-python agent_evaluation_script.py --model gpt-4o-123
+To run the full pipeline (which fetches dynamic tone and rules, generates bot responses, and evaluates them):
 
-# Evaluation only (use pre-generated results):
-python agent_evaluation_script.py \
-    --model gpt-4o-123 \
-    --skip_generation \
-    --results_file results/gpt-4o-123/agent_using_gpt-4o-123_FINAL.pkl
+```bash
+python run_pipeline.py
 ```
+
+Alternatively, you can run individual parts of the process:
+
+* **Fetch dynamic instructions only**:
+  ```bash
+  python test_dynamic_instructions.py
+  ```
+
+* **Run evaluation script directly**:
+  ```bash
+  python agent_evaluation_script.py --model gpt-4o-123
+  ```
+
+* **Evaluation only (using pre-generated results)**:
+  ```bash
+  python agent_evaluation_script.py \
+      --model gpt-4o-123 \
+      --skip_generation \
+      --results_file results/gpt-4o-123/agent_using_gpt-4o-123_FINAL.pkl
+  ```
+
 
 ## Configuration
 
@@ -58,7 +74,7 @@ Never hardcode URLs or credentials in Python source files.
 
 | Section | Purpose |
 |---|---|
-| `bot` | Bot ID and ref ID under evaluation |
+| `bot` | Bot ID, ref ID, and target environment (e.g., qa) under evaluation |
 | `api` | LLM-service endpoint and request parameters |
 | `evaluation` | Judge model, batch size, reasoning effort |
 | `config_service` | Netomi internal config service URLs (QA / DEV) |
