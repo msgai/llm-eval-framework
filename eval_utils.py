@@ -347,7 +347,12 @@ async def load_dynamic_instructions(
 
     dm_proxy = get_dm_config_proxy(env)
 
-    resp = await dm_proxy.fetch_prompts_list(
+    # Use fetch_prompts_list if available; fallback to 'le' due to a bug/rename in some library versions
+    fetch_method = getattr(dm_proxy, "fetch_prompts_list", None) or getattr(dm_proxy, "le", None)
+    if not fetch_method:
+        raise AttributeError("Neither 'fetch_prompts_list' nor 'le' method found on dm_proxy")
+
+    resp = await fetch_method(
         bot_id=bot_id,
         capability_id=capability_id,
         bot_ref_id=bot_ref_id,

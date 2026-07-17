@@ -231,6 +231,7 @@ def validate_latency_metrics(time_metrics) -> bool:
     return has_last_token or has_llm_gen
 
 
+
 def run_conversation(convo_df, model_name):
     """Run all turns for a single conversation sequentially."""
     convo_id = convo_df["conversation_id"].iloc[0]
@@ -311,7 +312,7 @@ def run_result_generation(dataset_path, model_name, output_dir):
     os.makedirs(model_output_dir, exist_ok=True)
     os.makedirs(f"{model_output_dir}/pickle_files", exist_ok=True)
     eval_dataset = pd.read_pickle(dataset_path)
-    eval_dataset = eval_dataset[:1]
+    eval_dataset = eval_dataset[:20]
     eval_dataset.reset_index(drop=True, inplace=True)
     eval_dataset.sort_values(by=["conversation_id", "sequence"], inplace=True)
     eval_dataset.reset_index(drop=True, inplace=True)
@@ -325,11 +326,41 @@ def run_result_generation(dataset_path, model_name, output_dir):
 
     valid_results = len(all_results)
     invalid_results = len(eval_dataset) - valid_results
-    final_output_path = f"{model_output_dir}/agent_using_{model_name}_FINAL.pkl"
-    with open(final_output_path, "wb") as f:
-        pickle.dump(all_results, f)
+    
+    result_df = pd.DataFrame(all_results)
+    
+    # Add latency metrics if available
+    if not result_df.empty and "time_metrics" in result_df.columns:
+        try:
+            result_df["first_token_llm_latency"] = result_df["time_metrics"].apply(
+                lambda x: (
+                    safe_get_latency(x, "first_token_latency") - safe_get_latency(x, "total_tool_latency")
+                    if validate_latency_metrics(x)
+                    else 0
+                )
+            )
+            result_df["last_token_llm_latency"] = result_df["time_metrics"].apply(
+                lambda x: (
+                    (
+                        safe_get_latency(x, "last_token_latency") - safe_get_latency(x, "total_tool_latency")
+                        if safe_get_latency(x, "last_token_latency") != 0
+                        else safe_get_latency(x, "llm_generation_latency") - safe_get_latency(x, "total_tool_latency")
+                    )
+                    if validate_latency_metrics(x)
+                    else 0
+                )
+            )
+        except Exception as e:
+            print(f"Warning: Could not calculate latency metrics: {e}")
 
-    print(f"Result generation completed. Saved to: {final_output_path}")
+    final_output_path = f"{model_output_dir}/{model_name}_generation_results.pkl"
+    with open(final_output_path, "wb") as f:
+        pickle.dump(result_df.to_dict(orient="records"), f)
+
+    csv_output_path = f"{model_output_dir}/{model_name}_generation_results.csv"
+    result_df.to_csv(csv_output_path, index=False)
+
+    print(f"Result generation completed. Saved to:\n  - {final_output_path}\n  - {csv_output_path}")
     print(f"Summary: {valid_results} valid, {invalid_results} invalid/failed")
     return final_output_path
 
@@ -808,11 +839,8 @@ def run_evaluation(results_file_path, model_name, output_dir):
         "addresses_user_query", "uses_tool_output_correctly", "has_hallucination",
         "is_complete", "hallucination_details",
         "total_tools_used", "tool_wise_results",
-        "total_input_token", "input_token", "cached_input_token", "total_output_token",
-        "output_token", "reasoning_output_token",
+        "time_metrics", "first_token_llm_latency", "last_token_llm_latency",
     ]
-    if "first_token_llm_latency" in combined_df.columns:
-        final_columns.extend(["first_token_llm_latency", "last_token_llm_latency"])
 
     final_df = pd.DataFrame()
     if not combined_df.empty:
