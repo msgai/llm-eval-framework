@@ -14,7 +14,7 @@ def run_script(script_name):
 
 if __name__ == "__main__":
     try:
-        run_script("test_dynamic_instructions.py")
+        run_script("fetch_dynamic_instructions.py")
         run_script("agent_evaluation_script.py")
         print("All scripts ran successfully!")
     except Exception as e:

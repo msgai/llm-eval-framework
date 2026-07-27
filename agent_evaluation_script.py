@@ -1,12 +1,11 @@
 import asyncio
 import argparse
 import json
-import logging  # noqa: F401  (kept for downstream use)
+import logging
 import os
 import pickle
 import time
 from typing import Any, Dict, List, Optional
-
 import pandas as pd
 import requests
 from dotenv import load_dotenv
@@ -19,6 +18,8 @@ from pydantic import BaseModel, Field
 
 import eval_utils
 import logging
+
+print("Starting agent evaluation script — importing modules...")
 
 # logging.basicConfig(
 #     level=logging.DEBUG,
@@ -51,6 +52,7 @@ EVAL_BATCH_SIZE = CONFIG["evaluation"]["batch_size"]
 EVAL_DELAY_SECONDS = CONFIG["evaluation"]["delay_seconds"]
 
 _DEFAULTS = CONFIG.get("defaults", {})
+DEFAULT_RUN_NAME = _DEFAULTS.get("run_name")
 DEFAULT_MODEL_NAME = _DEFAULTS.get("model_name")
 DEFAULT_DATASET_PATH = _DEFAULTS.get("dataset_path", "datasets/llm_eval_dataset_1.pkl")
 DEFAULT_OUTPUT_DIR = _DEFAULTS.get("output_dir", "results")
@@ -194,12 +196,12 @@ def generate_response(response):
     input_token = total_input_token - cached_input_token
 
     total_output_token = token_usage.get("completion_tokens", 0)
-    output_token = total_output_token
     reasoning_output_token = (
         completion_details.get("reasoning")
         or completion_details.get("priority_reasoning")
         or 0
     )
+    output_token = total_output_token - reasoning_output_token
 
     return {
         "request_id": response["requestId"],
@@ -230,6 +232,47 @@ def validate_latency_metrics(time_metrics) -> bool:
     has_llm_gen = "llm_generation_latency" in metrics and metrics["llm_generation_latency"] != 0
     return has_last_token or has_llm_gen
 
+
+
+def get_model_pricing(model_name: str) -> Optional[dict]:
+    """Load config.json and return the pricing dict matching the model_name (exact match only)."""
+    config_json_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.json")
+    if not os.path.exists(config_json_path):
+        print(f"Warning: config.json not found at {config_json_path}")
+        return None
+    try:
+        with open(config_json_path, "r", encoding="utf-8") as f:
+            pricing_data = json.load(f)
+        
+        models_pricing = pricing_data.get("models", {})
+        return models_pricing.get(model_name)
+    except Exception as exc:
+        print(f"Error loading model pricing: {exc}")
+        return None
+
+
+def calculate_row_cost(row, pricing: dict) -> float:
+    """Calculate the total cost for a row based on pricing config."""
+    if not pricing:
+        return 0.0
+    
+    input_tokens = row.get("input_token", 0)
+    cached_tokens = row.get("cached_input_token", 0)
+    output_tokens = row.get("output_token", 0)
+    reasoning_tokens = row.get("reasoning_output_token", 0)
+
+    input_rate = pricing.get("input_token", 0.0)
+    cached_rate = pricing.get("cached_input_token", 0.0)
+    output_rate = pricing.get("output_token", 0.0)
+    reasoning_rate = pricing.get("reasoning_output_token", 0.0)
+
+    cost = (
+        (input_tokens * input_rate) +
+        (cached_tokens * cached_rate) +
+        (output_tokens * output_rate) +
+        (reasoning_tokens * reasoning_rate)
+    ) / 1000000.0
+    return cost
 
 
 def run_conversation(convo_df, model_name):
@@ -304,11 +347,11 @@ def run_conversation(convo_df, model_name):
     return row_results
 
 
-def run_result_generation(dataset_path, model_name, output_dir):
+def run_result_generation(dataset_path, run_name, output_dir, model_name=None):
     """Run the result generation phase."""
-    print(f"Starting result generation for model: {model_name}")
+    print(f"Starting result generation for run: {run_name}")
 
-    model_output_dir = os.path.join(output_dir, model_name)
+    model_output_dir = os.path.join(output_dir, run_name)
     os.makedirs(model_output_dir, exist_ok=True)
     os.makedirs(f"{model_output_dir}/pickle_files", exist_ok=True)
     eval_dataset = pd.read_pickle(dataset_path)
@@ -317,12 +360,12 @@ def run_result_generation(dataset_path, model_name, output_dir):
     eval_dataset.sort_values(by=["conversation_id", "sequence"], inplace=True)
     eval_dataset.reset_index(drop=True, inplace=True)
 
-    print(f"Loaded dataset with {len(eval_dataset)} records")
+    print(f"Loaded {len(eval_dataset)} rows — grouped into {eval_dataset['conversation_id'].nunique()} conversations")
 
     all_results: list = []
     for convo_id, convo_df in eval_dataset.groupby("conversation_id", group_keys=False):
         print(f"\n=== Processing conversation {convo_id} ({len(convo_df)} rows) ===")
-        all_results.extend(run_conversation(convo_df, model_name))
+        all_results.extend(run_conversation(convo_df, run_name))
 
     valid_results = len(all_results)
     invalid_results = len(eval_dataset) - valid_results
@@ -353,11 +396,27 @@ def run_result_generation(dataset_path, model_name, output_dir):
         except Exception as e:
             print(f"Warning: Could not calculate latency metrics: {e}")
 
-    final_output_path = f"{model_output_dir}/{model_name}_generation_results.pkl"
+    # Calculate generation costs using config.json
+    if not result_df.empty:
+        try:
+            pricing = get_model_pricing(DEFAULT_MODEL_NAME)
+            if pricing:
+                print(f"Applying token pricing for model '{DEFAULT_MODEL_NAME}': {pricing}")
+                result_df["total_cost"] = result_df.apply(
+                    lambda row: calculate_row_cost(row, pricing),
+                    axis=1
+                )
+            else:
+                result_df["total_cost"] = 0.0
+        except Exception as e:
+            print(f"Warning: Could not calculate generation costs: {e}")
+            result_df["total_cost"] = 0.0
+
+    final_output_path = f"{model_output_dir}/{run_name}_generation_results.pkl"
     with open(final_output_path, "wb") as f:
         pickle.dump(result_df.to_dict(orient="records"), f)
 
-    csv_output_path = f"{model_output_dir}/{model_name}_generation_results.csv"
+    csv_output_path = f"{model_output_dir}/{run_name}_generation_results.csv"
     result_df.to_csv(csv_output_path, index=False)
 
     print(f"Result generation completed. Saved to:\n  - {final_output_path}\n  - {csv_output_path}")
@@ -653,6 +712,10 @@ def run_evaluation(results_file_path, model_name, output_dir):
     results_df = pd.DataFrame(results_data)
     print(f"Loaded {len(results_df)} results for evaluation")
 
+    if results_df.empty or "request_id" not in results_df.columns:
+        print("No valid generation results to evaluate. Skipping evaluation.")
+        return None
+
     evaluated_request_ids, existing_batch_results, highest_batch_num = load_existing_batch_results(
         batch_results_dir
     )
@@ -800,7 +863,7 @@ def run_evaluation(results_file_path, model_name, output_dir):
             "request_id", "conversation_id", "sequence", "component", "Lang",
             "user_query", "conversation_history", "intermediate_steps", "answer", "time_metrics",
             "total_input_token", "input_token", "cached_input_token", "total_output_token",
-            "output_token", "reasoning_output_token",
+            "output_token", "reasoning_output_token", "total_cost",
         ]
         # Filter existing columns in original_results_df to prevent KeyError
         existing_cols = [col for col in expected_cols if col in original_results_df.columns]
@@ -826,6 +889,22 @@ def run_evaluation(results_file_path, model_name, output_dir):
         except Exception as exc:
             print(f"Warning: Could not calculate latency metrics: {exc}")
 
+    # Ensure total_cost is in combined_df (calculating it if not present)
+    if not combined_df.empty:
+        if "total_cost" not in combined_df.columns:
+            try:
+                pricing = get_model_pricing(DEFAULT_MODEL_NAME)
+                if pricing:
+                    combined_df["total_cost"] = combined_df.apply(
+                        lambda row: calculate_row_cost(row, pricing),
+                        axis=1
+                    )
+                else:
+                    combined_df["total_cost"] = 0.0
+            except Exception as exc:
+                print(f"Warning: Could not calculate costs during evaluation phase: {exc}")
+                combined_df["total_cost"] = 0.0
+
     final_columns = [
         "request_id", "conversation_id", "sequence", "component", "Lang",
         "user_query", "conversation_history", "intermediate_steps", "answer",
@@ -839,7 +918,7 @@ def run_evaluation(results_file_path, model_name, output_dir):
         "addresses_user_query", "uses_tool_output_correctly", "has_hallucination",
         "is_complete", "hallucination_details",
         "total_tools_used", "tool_wise_results",
-        "time_metrics", "first_token_llm_latency", "last_token_llm_latency",
+        "time_metrics", "first_token_llm_latency", "last_token_llm_latency", "total_cost",
     ]
 
     final_df = pd.DataFrame()
@@ -887,8 +966,8 @@ def main():
         description="llm-eval-framework — Combined Result Generation and Evaluation"
     )
     parser.add_argument(
-        "--model", default=DEFAULT_MODEL_NAME,
-        help=f"Model name to evaluate (config.yaml default: {DEFAULT_MODEL_NAME!r})",
+        "--model", default=DEFAULT_RUN_NAME,
+        help=f"Model name to evaluate (config.yaml default: {DEFAULT_RUN_NAME!r})",
     )
     parser.add_argument("--dataset", default=DEFAULT_DATASET_PATH, help="Path to the input dataset")
     parser.add_argument("--output_dir", default=DEFAULT_OUTPUT_DIR, help="Output directory for results")
@@ -908,7 +987,7 @@ def main():
     args = parser.parse_args()
 
     if not args.model:
-        print("Error: --model was not provided and no defaults.model_name is set in config.yaml")
+        print("Error: --model was not provided and no defaults.run_name is set in config.yaml")
         return
 
     print(f"Starting combined evaluation for model : {args.model}")

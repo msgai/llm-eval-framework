@@ -1,0 +1,70 @@
+{
+  "pricing_unit": "per_1M_tokens",
+  "currency": "USD",
+  "models": {
+    "GPT-5.5": {
+      "input_token": 5.00,
+      "cached_input_token": 0.50,
+      "total_input_token": 5.00,
+      "output_token": 30.00,
+      "reasoning_output_token": 30.00,
+      "total_output_token": 30.00
+    },
+    "GPT-5.5 (reasoning: low)": {
+      "input_token": 5.00,
+      "cached_input_token": 0.50,
+      "total_input_token": 5.00,
+      "output_token": 30.00,
+      "reasoning_output_token": 30.00,
+      "total_output_token": 30.00
+    },
+    "GPT-5.6-sol": {
+      "input_token": 5.00,
+      "cached_input_token": 0.50,
+      "total_input_token": 5.00,
+      "output_token": 30.00,
+      "reasoning_output_token": 30.00,
+      "total_output_token": 30.00
+    },
+    "GPT-5.6-terra": {
+      "input_token": 2.50,
+      "cached_input_token": 0.25,
+      "total_input_token": 2.50,
+      "output_token": 15.00,
+      "reasoning_output_token": 15.00,
+      "total_output_token": 15.00
+    },
+    "GPT-5.6-terra(reasoning: low)": {
+      "input_token": 2.50,
+      "cached_input_token": 0.25,
+      "total_input_token": 2.50,
+      "output_token": 15.00,
+      "reasoning_output_token": 15.00,
+      "total_output_token": 15.00
+    },
+    "GPT-5.6-luna": {
+      "input_token": 1.00,
+      "cached_input_token": 0.10,
+      "total_input_token": 1.00,
+      "output_token": 6.00,
+      "reasoning_output_token": 6.00,
+      "total_output_token": 6.00
+    },
+    "GPT-5.6-luna(reasoning: low)": {
+      "input_token": 1.00,
+      "cached_input_token": 0.10,
+      "total_input_token": 1.00,
+      "output_token": 6.00,
+      "reasoning_output_token": 6.00,
+      "total_output_token": 6.00
+    },
+    "GPT-5.2": {
+      "input_token": 1.75,
+      "cached_input_token": 0.175,
+      "total_input_token": 1.75,
+      "output_token": 14.00,
+      "reasoning_output_token": 14.00,
+      "total_output_token": 14.00
+    }
+  }
+}

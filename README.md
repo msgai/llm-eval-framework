@@ -49,7 +49,7 @@ Alternatively, you can run individual parts of the process:
 
 * **Fetch dynamic instructions only**:
   ```bash
-  python test_dynamic_instructions.py
+  python fetch_dynamic_instructions.py
   ```
 
 * **Run evaluation script directly**:
