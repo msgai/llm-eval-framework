@@ -21,7 +21,7 @@ config_service:
   local:
     dm_config_url: ""
     # gateway_url: "http://0.0.0.0:8200/v1/llm/get_ans_sync_stream"
-    gatewau_url: "http://ds-gateway-local.internal.netomi.com/v1/llm/get_ans_sync_stream"
+    gateway_url: "http://ds-gateway-local.internal.netomi.com/v1/llm/get_ans_sync_stream"
     env: "local"
   qa:
     dm_config_url: "http://qa-configs.internal.netomi.com/v1/service/configuration/get"
@@ -81,7 +81,8 @@ prompts:
 # CLI / script defaults  (all overridable via command-line flags)
 # ---------------------------------------------------------------------------
 defaults:
-  model_name: "gpt-5.2-1234"
+  run_name: "gpt-5.2-new"
+  model_name: "GPT-5.2"
   dataset_path: "datasets/llm_eval_dataset_1.pkl"
   output_dir: "results"
   skip_generation: false
